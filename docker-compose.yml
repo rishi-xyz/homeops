@@ -1,0 +1,97 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: homeops-postgres
+    environment:
+      POSTGRES_USER: homeops
+      POSTGRES_PASSWORD: homeops
+      POSTGRES_DB: homeops
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U homeops"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: homeops-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  mcp:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mcp
+    container_name: homeops-mcp
+    env_file:
+      - .env
+    environment:
+      HOMEOPS_MCP_HOST: 0.0.0.0
+      HOMEOPS_MCP_PORT: 8001
+      HOMEOPS_DB_PATH: /app/data/local/homeops.db
+      HOMEOPS_SEED_DIR: /app/data/seed
+      DATABASE_URL: postgresql://homeops:homeops@postgres:5432/homeops
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: homeops-api
+    env_file:
+      - .env
+    environment:
+      HOMEOPS_API_HOST: 0.0.0.0
+      HOMEOPS_API_PORT: 8000
+      HOMEOPS_MCP_URL: http://mcp:8001/mcp
+      HOMEOPS_DB_PATH: /app/data/local/homeops.db
+      HOMEOPS_SEED_DIR: /app/data/seed
+      DATABASE_URL: postgresql://homeops:homeops@postgres:5432/homeops
+      AWS_REGION: ${AWS_REGION:-eu-west-1}
+      BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-}
+      HOMEOPS_SUMMARY_PROVIDER: ${HOMEOPS_SUMMARY_PROVIDER:-bedrock}
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mcp:
+        condition: service_started
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    container_name: homeops-web
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

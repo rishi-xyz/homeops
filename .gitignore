@@ -1,0 +1,91 @@
+# ---------------------------------------------------------------------------
+# Secrets and environment
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!data/seed/*.key.json
+.aws/
+aws-credentials
+credentials.json
+service-account*.json
+secrets/
+
+# ---------------------------------------------------------------------------
+# Local databases and runtime state
+# ---------------------------------------------------------------------------
+data/local/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+data/runtime/
+
+# ---------------------------------------------------------------------------
+# Logs, caches and test output
+# ---------------------------------------------------------------------------
+logs/
+*.log
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+junit*.xml
+test-results/
+test-output/
+.playwright-report/
+blob-report/
+.playwright/
+
+# ---------------------------------------------------------------------------
+# Virtual environments and dependency folders
+# ---------------------------------------------------------------------------
+.venv/
+venv/
+env/
+node_modules/
+.pnpm-store/
+.yarn/
+
+# ---------------------------------------------------------------------------
+# Build output
+# ---------------------------------------------------------------------------
+dist/
+build/
+*.egg-info/
+.eggs/
+out/
+.vite/
+*.tsbuildinfo
+
+# ---------------------------------------------------------------------------
+# User documents, receipts and household data (never commit these)
+# ---------------------------------------------------------------------------
+uploads/
+user-documents/
+receipts/
+documents/
+private/
+*.pdf
+!docs/*.pdf
+*.heic
+
+# ---------------------------------------------------------------------------
+# Local scratch / planning area (not part of the submitted repository)
+# ---------------------------------------------------------------------------
+.local/
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+__pycache__
