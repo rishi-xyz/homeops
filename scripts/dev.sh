@@ -11,9 +11,9 @@ $VENV/bin/python -m homeops_mcp_server.server > /tmp/opencode/mcp.log 2>&1 & ech
 sleep 2
 $VENV/bin/uvicorn homeops_api.main:app --host 127.0.0.1 --port 8000 > /tmp/opencode/api.log 2>&1 & echo $! > data/runtime/api.pid
 sleep 2
-if [ -f apps/web/package.json ]; then
-  (cd apps/web && npm run dev -- --host 127.0.0.1 --port 5173 > /tmp/opencode/web.log 2>&1 & echo $! > "$ROOT/data/runtime/web.pid")
+if [ -f apps/web-next/package.json ]; then
+  bash "$ROOT/scripts/start-web.sh" &
 else
-  echo "apps/web/package.json not found; skipping web dev server"
+  echo "apps/web-next/package.json not found; skipping web dev server"
 fi
-echo "Started. MCP: http://127.0.0.1:8001/mcp, API: http://127.0.0.1:8000, Web: http://127.0.0.1:5173"
+echo "Started. MCP: http://127.0.0.1:8001/mcp, API: http://127.0.0.1:8000, Web: http://127.0.0.1:3000"

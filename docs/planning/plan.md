@@ -35,7 +35,7 @@ Do not select AWS Builder if the project only contains a placeholder/config flag
 
 ### Build
 
-- React + TypeScript + Vite frontend.
+- Next.js (React + TypeScript) frontend.
 - Python + FastAPI application API and MCP client.
 - Separate MCP server using official Python MCP SDK and Streamable HTTP.
 - SQLite, fictional household seed data and core domain services.

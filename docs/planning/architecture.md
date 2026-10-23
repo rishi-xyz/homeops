@@ -12,7 +12,7 @@ The target MCP transport is **Streamable HTTP** using an official MCP SDK. Verif
 
 ```mermaid
 flowchart TD
-    U[User] --> WEB[React + TypeScript web simulator]
+    U[User] --> WEB[Next.js web simulator]
     WEB -->|REST API| API[FastAPI API and orchestrator]
     API -->|MCP client: initialize, tools/list, tools/call| MCP[HomeOps MCP server - Streamable HTTP]
     MCP --> CORE[Shared HomeOps domain services]
@@ -34,14 +34,12 @@ The browser calls only the FastAPI API. The API/orchestrator must use the MCP cl
 ```text
 homeops/
 ├── apps/
-│   └── web/                         # React + TypeScript + Vite
-│       ├── src/components/
-│       ├── src/features/assistant/
-│       ├── src/features/assets/
-│       ├── src/features/reminders/
-│       ├── src/features/maintenance/
-│       ├── src/features/providers/
-│       └── src/lib/api.ts
+│   └── web-next/                    # Next.js website (landing page + demo UI)
+│       └── src/app/
+│           ├── page.tsx             # Landing page
+│           ├── demo/page.tsx        # MCP-backed assistant demo
+│           ├── layout.tsx
+│           └── globals.css
 ├── services/
 │   ├── api/                          # FastAPI and MCP client
 │   │   └── app/{main.py,routes.py,orchestrator.py,config.py}
@@ -70,7 +68,7 @@ Don't spend hackathon time on complex packaging. Keep the logical separation; ad
 
 ### Web simulator
 
-- Vite development server, e.g. `http://localhost:5173`.
+- Next.js development server, e.g. `http://localhost:3000`.
 - Main views: assistant conversation, asset detail, warranty status, upcoming/overdue reminders, maintenance history, provider handoff cards and request status.
 - Shows the MCP tool trace returned by the backend.
 - Uses plain text prompts by default; voice input is an optional enhancement, never required for the demo.

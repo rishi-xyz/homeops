@@ -157,7 +157,7 @@ def build_settings(env: dict[str, str] | None = None) -> Settings:
 
     api_host = _env_str("HOMEOPS_API_HOST", "127.0.0.1", env) or "127.0.0.1"
     api_port = _env_int("HOMEOPS_API_PORT", 8000, env)
-    web_port = _env_int("HOMEOPS_WEB_PORT", 5173, env)
+    web_port = _env_int("HOMEOPS_WEB_PORT", 3000, env)
 
     provider = (_env_str("HOMEOPS_SUMMARY_PROVIDER", "deterministic", env) or "deterministic").lower()
     if provider not in {"deterministic", "bedrock"}:

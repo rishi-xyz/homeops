@@ -19,7 +19,7 @@ install:
 	$(VENV)/bin/pip install -e ".[dev]"
 
 install-web:
-	@cd apps/web && $(NPM) install
+	@cd apps/web-next && $(NPM) install
 
 seed:
 	$(PYTHON) -m homeops_core.cli seed
@@ -37,7 +37,7 @@ mcp:
 	$(PYTHON) -m homeops_mcp_server.server
 
 web:
-	@cd apps/web && $(NPM) run dev -- --host 127.0.0.1 --port 5173
+	@cd apps/web-next && $(NPM) run dev -- --hostname 127.0.0.1 --port 3000
 
 dev:
 	@mkdir -p $(RUNTIME_DIR) $(LOG_DIR)
@@ -46,11 +46,11 @@ dev:
 	@sleep 2
 	@bash -c 'setsid $(UVICORN) homeops_api.main:app --host 127.0.0.1 --port 8000 > $(LOG_DIR)/api.log 2>&1 < /dev/null & echo $$! > $(PID_API)'
 	@sleep 2
-	@bash -c 'cd apps/web && setsid $(NPM) run dev -- --host 127.0.0.1 --port 5173 > $(LOG_DIR)/web.log 2>&1 < /dev/null & echo $$! > "$(CURDIR)/$(PID_WEB)"'
+	@bash scripts/start-web.sh &
 	@sleep 2
 	@echo "MCP: http://127.0.0.1:8001/mcp"
 	@echo "API: http://127.0.0.1:8000"
-	@echo "Web: http://127.0.0.1:5173"
+	@echo "Web: http://127.0.0.1:3000"
 	@echo "PIDs written to $(RUNTIME_DIR)/"
 
 stop:
@@ -71,7 +71,7 @@ test:
 	$(PYTHON) -m pytest -v
 
 test-web:
-	@cd apps/web && $(NPM) run typecheck && $(NPM) run build
+	@cd apps/web-next && $(NPM) run build
 
 lint:
 	$(VENV)/bin/ruff check .

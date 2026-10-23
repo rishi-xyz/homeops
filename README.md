@@ -62,7 +62,7 @@ uv pip install -e ".[dev]"                             # or: pip install -e ".[d
 make seed
 
 # 3. Install the web dependencies (only needed for the browser UI)
-cd apps/web && npm install && cd ../..
+cd apps/web-next && npm install && cd ../..
 
 # 4. Run everything (MCP server + API + web app)
 make dev
@@ -72,7 +72,7 @@ Then open:
 
 | Surface | URL |
 |---|---|
-| Web simulator | <http://127.0.0.1:5173> |
+| Web simulator | <http://127.0.0.1:3000> |
 | FastAPI orchestrator | <http://127.0.0.1:8000> |
 | API health check | <http://127.0.0.1:8000/health> |
 | MCP server (Streamable HTTP) | <http://127.0.0.1:8001/mcp> |
@@ -89,7 +89,7 @@ Stop everything with `make stop`.
 .venv/bin/uvicorn homeops_api.main:app --host 127.0.0.1 --port 8000
 
 # terminal 3 - web app
-cd apps/web && npm run dev
+cd apps/web-next && npm run dev
 ```
 
 ---
@@ -105,7 +105,7 @@ cd apps/web && npm run dev
 | `make status` | Print what is currently stored in the local database |
 | `make api` | Start the FastAPI orchestrator on `127.0.0.1:8000` |
 | `make mcp` | Start the MCP server on `127.0.0.1:8001/mcp` |
-| `make web` | Start the Vite dev server on `127.0.0.1:5173` |
+| `make web` | Start the Next.js dev server on `127.0.0.1:3000` |
 | `make dev` | Start all three processes together with a single stop command |
 | `make stop` | Stop the processes started by `make dev` |
 | `make test` | Run the Python test suite |
@@ -121,7 +121,7 @@ processes. If you started a process manually, stop it with `Ctrl+C`.
 ## Architecture
 
 ```text
-Browser (React + TypeScript + Vite)
+Browser (Next.js + React + TypeScript)
         |  REST
         v
 FastAPI orchestrator (services/api)          ---> Amazon Bedrock Runtime  [optional]
@@ -144,7 +144,7 @@ shows the tool name, status and record IDs returned by that call.
 |---|---|---|
 | MCP server | `http://127.0.0.1:8001/mcp` | Official MCP Python SDK (`mcp` >= 2.0), Streamable HTTP transport |
 | FastAPI orchestrator | `http://127.0.0.1:8000` | Frontend API, deterministic intent router, MCP client session |
-| Web simulator | `http://127.0.0.1:5173` | Alexa+-style conversation UI, asset views, handoff cards |
+| Web simulator | `http://127.0.0.1:3000` | Alexa+-style conversation UI, asset views, handoff cards |
 
 The MCP server and the API both depend on `homeops_core`, which owns validation, persistence and
 state transitions. SQLite is the single source of truth; the API never writes to it directly on the
@@ -198,7 +198,7 @@ returned as structured results, never as stack traces.
 
 ```text
 homeops/
-├── apps/web/                     React + TypeScript + Vite simulator
+├── apps/web-next/                Next.js website (landing page + demo simulator)
 ├── services/
 │   ├── api/homeops_api/          FastAPI app, routes, orchestrator, MCP client
 │   └── mcp_server/               Official MCP SDK server, Streamable HTTP
@@ -377,59 +377,27 @@ Any client supporting MCP Streamable HTTP transport can connect to:
 
 ---
 
-## Web simulation with Vercel AI SDK + OpenRouter
+## Web app (Next.js)
 
-The web UI can optionally use [Vercel AI SDK](https://ai-sdk.dev/) with [OpenRouter](https://www.openrouter.ai/) for enhanced AI capabilities in the browser simulation.
+The website lives in `apps/web-next`. It is a Next.js app with a marketing landing page (`/`)
+and the assistant demo (`/demo`). It talks to the FastAPI orchestrator over REST.
 
-### Setup
-
-1. Get an API key from [OpenRouter](https://www.openrouter.ai/keys)
-2. Configure environment variables:
+To point it at a different API host, create `apps/web-next/.env.local`:
 
 ```bash
-# In .env (root)
-OPENROUTER_API_KEY=sk-or-v1-...
-OPENROUTER_MODEL=anthropic/claude-3.5-sonnet
-
-# In apps/web/.env.local
-VITE_USE_OPENROUTER=true
-VITE_OPENROUTER_MODEL=anthropic/claude-3.5-sonnet
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-3. Install dependencies in the web app:
-
-```bash
-cd apps/web
-npm install ai @ai-sdk/react @openrouter/ai-sdk-provider
-```
-
-4. Start the services as usual with `make dev`
-
-**Note:** The core HomeOps flow always goes through the real MCP server via the FastAPI orchestrator regardless of AI provider settings. OpenRouter integration is for enhanced web simulation features only and requires your own API key.
-
-
-### Using Amazon Bedrock instead of OpenRouter
-
-Since Bedrock is already integrated, you can use it for the web simulation:
-
-1. Install boto3: `pip install -e ".[aws]"`
-2. Configure AWS credentials (via AWS CLI profile, env vars, or IAM role)
-3. Set in `.env`:
-```bash
-HOMEOPS_SUMMARY_PROVIDER=bedrock
-BEDROCK_MODEL_ID=anthropic.claude-3-5-sonnet-20240620-v1:0
-AWS_REGION=eu-west-1
-```
-4. Start services with `make dev` - the API will use Bedrock for brief summaries when enabled
-
-For general chat in the web UI, the current flow goes through the deterministic MCP-backed orchestrator. You can extend it by adding a Bedrock-powered chat endpoint if needed.
+The core HomeOps flow always goes through the real MCP server via the FastAPI orchestrator. Optional
+AI features such as Bedrock summaries are configured on the API side with `HOMEOPS_SUMMARY_PROVIDER`
+and `BEDROCK_MODEL_ID` (see below).
 
 
 ---
 
-## New: Docker & Next.js Frontend
+## Docker & Next.js frontend
 
-HomeOps now supports containerized deployment with Docker Compose and a modern Next.js frontend.
+HomeOps supports containerized deployment with Docker Compose and a Next.js frontend.
 
 ### Architecture with Docker
 ```bash
