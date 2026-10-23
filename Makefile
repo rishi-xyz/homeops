@@ -1,9 +1,13 @@
-.PHONY: install install-web seed reset status api mcp web dev stop test test-web lint clean
+.PHONY: install install-web env seed reset status api mcp web dev stop test test-web lint clean
 
 VENV ?= .venv
 PYTHON ?= $(VENV)/bin/python
 UVICORN ?= $(VENV)/bin/uvicorn
 NPM ?= npm
+
+# Selects .env.<name> for every Python process started through make.
+ENV_NAME ?= dev
+export HOMEOPS_ENV := $(ENV_NAME)
 
 RUNTIME_DIR := data/runtime
 PID_MCP := $(RUNTIME_DIR)/mcp.pid
@@ -21,6 +25,10 @@ install:
 install-web:
 	@cd apps/web-next && $(NPM) install
 
+env:
+	@test -f .env.$(ENV_NAME) || cp .env.$(ENV_NAME).example .env.$(ENV_NAME)
+	@echo "Environment: .env.$(ENV_NAME) (HOMEOPS_ENV=$(ENV_NAME))"
+
 seed:
 	$(PYTHON) -m homeops_core.cli seed
 
@@ -36,10 +44,10 @@ api:
 mcp:
 	$(PYTHON) -m homeops_mcp_server.server
 
-web:
-	@cd apps/web-next && $(NPM) run dev -- --hostname 127.0.0.1 --port 3000
+web: env
+	@set -a && . .env.$(ENV_NAME) && set +a && cd apps/web-next && $(NPM) run dev -- --hostname 127.0.0.1 --port 3000
 
-dev:
+dev: env
 	@mkdir -p $(RUNTIME_DIR) $(LOG_DIR)
 	@echo "Starting HomeOps..."
 	@bash -c 'setsid $(PYTHON) -m homeops_mcp_server.server > $(LOG_DIR)/mcp.log 2>&1 < /dev/null & echo $$! > $(PID_MCP)'

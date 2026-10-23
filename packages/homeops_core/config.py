@@ -1,19 +1,24 @@
 """Environment-driven configuration for every HomeOps process.
 
-Settings are read from the process environment (optionally seeded from a local
-``.env`` file). No secret is ever stored in this module: AWS credentials are
-resolved through the standard AWS credential chain by ``boto3`` itself.
+Settings are read from the process environment, optionally seeded from
+``.env.<HOMEOPS_ENV>`` (default: ``.env.dev``). No secret is ever stored in this
+module: AWS credentials are resolved through the standard AWS credential chain
+by ``boto3`` itself.
 """
 
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+DEFAULT_ENV_NAME = "dev"
+ENV_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
 FALSE_VALUES = {"0", "false", "no", "off"}
@@ -185,10 +190,37 @@ def build_settings(env: dict[str, str] | None = None) -> Settings:
     )
 
 
+def resolve_env_name(raw: str | None = None) -> str:
+    """Validate and normalise the selected environment name."""
+    name = (raw or DEFAULT_ENV_NAME).strip().lower()
+    if not ENV_NAME_PATTERN.fullmatch(name):
+        raise ConfigurationError(
+            f"HOMEOPS_ENV must be a simple name such as 'dev' or 'prod', got {name!r}"
+        )
+    return name
+
+
+def env_file_paths(home: Path, env_name: str | None = None) -> list[Path]:
+    """Dotenv files for the selected environment, in load order.
+
+    ``.env.<name>`` provides the environment defaults and
+    ``.env.<name>.local`` can hold personal overrides.
+    """
+    name = resolve_env_name(env_name or os.environ.get("HOMEOPS_ENV"))
+    return [home / f".env.{name}", home / f".env.{name}.local"]
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Process-wide settings, cached after the first call."""
     env = dict(os.environ)
-    dotenv_path = Path(env.get("HOMEOPS_HOME", str(REPO_ROOT))).expanduser() / ".env"
-    env.update({k: v for k, v in load_dotenv(dotenv_path).items() if k not in env})
+    home = Path(env.get("HOMEOPS_HOME", str(REPO_ROOT))).expanduser()
+    dotenv_paths = env_file_paths(home)
+    values: dict[str, str] = {}
+    for dotenv_path in dotenv_paths:
+        values.update(load_dotenv(dotenv_path))
+    if not dotenv_paths[0].exists():
+        # Backwards compatibility: a single repository-root .env file.
+        values.update(load_dotenv(home / ".env"))
+    env.update({k: v for k, v in values.items() if k not in env})
     return build_settings(env)

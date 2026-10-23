@@ -91,6 +91,7 @@ async def test_lists_expected_tools(mcp_url: str) -> None:
     expected = {
         "list_assets",
         "get_asset_details",
+        "create_asset",
         "search_maintenance_history",
         "log_maintenance_event",
         "create_reminder",
@@ -147,3 +148,23 @@ async def test_unknown_asset_returns_a_useful_error(mcp_url: str) -> None:
     text = " ".join(block.text for block in result.content if hasattr(block, "text"))
     assert "asset_missing" in text
     assert "Traceback" not in text
+
+
+@pytest.mark.asyncio
+async def test_create_asset_persists_and_keeps_missing_warranty_unknown(mcp_url: str) -> None:
+    """A created asset must be listed and must not claim a warranty it was not given."""
+    async with _session(mcp_url) as session:
+        result = await session.call_tool(
+            "create_asset", {"name": "Fridge Freezer", "brand": "Example"}
+        )
+        assert result.is_error is not True
+        payload = result.structured_content
+        asset = payload["detail"]["asset"]
+        assert asset["asset_id"].startswith("asset_")
+        assert asset["warranty_end"] is None
+        assert payload["detail"]["warranty"]["status"] == "unknown"
+
+        listed = await session.call_tool("list_assets", {"limit": 100})
+
+    ids = {item["asset_id"] for item in listed.structured_content["assets"]}
+    assert asset["asset_id"] in ids

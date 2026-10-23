@@ -58,7 +58,7 @@ homeops/
 ├── checklist.md
 ├── README.md
 ├── LICENSE
-├── .env.example
+├── .env.dev.example / .env.prod.example   Environment templates
 └── .gitignore
 ```
 
@@ -141,6 +141,7 @@ Keep names stable once frontend integration starts.
 |---|---|---|
 | `list_assets` | Search/list household assets | Read-only |
 | `get_asset_details` | Retrieve warranty and asset metadata | Unknown fields stay unknown |
+| `create_asset` | Add a purchased or installed household item | Unsupplied dates stay unknown |
 | `search_maintenance_history` | Search issues, repairs and service events | Returns source IDs/timestamps |
 | `log_maintenance_event` | Record issue, maintenance or repair | User-reported vs demo source is explicit |
 | `create_reminder` | Create a warranty/service reminder | Requires due date/time and timezone |

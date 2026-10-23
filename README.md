@@ -61,7 +61,8 @@ uv pip install -e ".[dev]"                             # or: pip install -e ".[d
 # 2. Load the fictional demo household
 make seed
 
-# 3. Install the web dependencies (only needed for the browser UI)
+# 3. Create the local environment file and install the web dependencies
+make env
 cd apps/web-next && npm install && cd ../..
 
 # 4. Run everything (MCP server + API + web app)
@@ -100,6 +101,7 @@ cd apps/web-next && npm run dev
 |---|---|
 | `make install` | Create the virtualenv and install Python dependencies |
 | `make install-web` | Install npm dependencies for the web app |
+| `make env` | Create `.env.dev` from the example (`ENV_NAME=prod` for the Docker env) |
 | `make seed` | Load the fictional demo household into the local SQLite database |
 | `make reset` | Delete the local database and rebuild it from the seed (clean demo state) |
 | `make status` | Print what is currently stored in the local database |
@@ -161,6 +163,7 @@ returned as structured results, never as stack traces.
 |---|---|
 | `list_assets` | List/filter household assets with a derived warranty status |
 | `get_asset_details` | Asset metadata, saved warranty dates, provenance, linked record IDs |
+| `create_asset` | Add a household item (purchase); unsupplied dates stay unknown |
 | `search_maintenance_history` | Search issues, services and repairs by asset, type, date or text |
 | `log_maintenance_event` | Record an issue, inspection, service, repair or note |
 | `create_reminder` | Create a warranty/maintenance reminder (validates date, timezone and references) |
@@ -180,17 +183,19 @@ returned as structured results, never as stack traces.
 
 1. **"Is my washing machine still under warranty?"** - the asset record, the saved dates and the
    provenance of each field are shown. The answer states that it is *based on the saved dates*.
-2. **"Remind me a month before it expires."** - a reminder is created and persisted.
-3. **"The washing machine is leaking again. Have we seen this before?"** - the previous incident
+2. **"I bought a new fridge."** - a new asset is created from the stated details. Purchase and
+   warranty dates that were not supplied stay unknown, so the warranty status is unknown.
+3. **"Remind me a month before it expires."** - a reminder is created and persisted.
+4. **"The washing machine is leaking again. Have we seen this before?"** - the previous incident
    records, their timestamps and their source IDs are listed.
-4. **"Prepare a brief for the technician."** - a brief assembled only from stored records, with
+5. **"Prepare a brief for the technician."** - a brief assembled only from stored records, with
    unknown fields listed as unknown.
-5. **"Help me contact a technician."** - a Maps search link, a prefilled WhatsApp message (only for
+6. **"Help me contact a technician."** - a Maps search link, a prefilled WhatsApp message (only for
    a provider that has a stored number), phone, email and the provider's own booking page. The
    recipient and the full message are shown before anything is opened.
-6. **Optional:** pick a fictional slot, create a simulated request and confirm it. The UI states
+7. **Optional:** pick a fictional slot, create a simulated request and confirm it. The UI states
    that no real provider has been contacted.
-7. The activity panel shows the MCP tool calls that actually ran, with names, status and record IDs.
+8. The activity panel shows the MCP tool calls that actually ran, with names, status and record IDs.
 
 ---
 
@@ -199,6 +204,7 @@ returned as structured results, never as stack traces.
 ```text
 homeops/
 ├── apps/web-next/                Next.js website (landing page + demo simulator)
+├── .env.dev.example / .env.prod.example   Environment templates
 ├── services/
 │   ├── api/homeops_api/          FastAPI app, routes, orchestrator, MCP client
 │   └── mcp_server/               Official MCP SDK server, Streamable HTTP
@@ -216,11 +222,29 @@ homeops/
 
 ## Configuration
 
-Every setting has a working default, so the project runs with no `.env` at all. Copy
-`.env.example` to `.env` to override anything (`.env` is git-ignored).
+Every setting has a working default, so the project runs without an env file. Each environment
+has a template in the repository root:
+
+| File | Used by |
+|---|---|
+| `.env.dev.example` | Local `make dev` / `make web` (SQLite, loopback, deterministic summaries) |
+| `.env.prod.example` | Docker Compose stack (container hosts, Bedrock, optional Postgres/Redis) |
+
+Create the real, git-ignored file with:
+
+```bash
+make env                # -> .env.dev
+make env ENV_NAME=prod  # -> .env.prod
+```
+
+`HOMEOPS_ENV` selects the environment (default `dev`). The Makefile exports it for every process it
+starts, so `make seed`, `make api`, `make dev` and `make web` all use the same file. Python loads
+`.env.<name>`, then `.env.<name>.local` for personal overrides; real environment variables always
+win. A plain `.env` is still read as a fallback when `.env.<name>` does not exist.
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `HOMEOPS_ENV` | `dev` | Selects `.env.<name>` |
 | `HOMEOPS_HOME` | repository root | Base path for relative paths |
 | `HOMEOPS_DB_PATH` | `data/local/homeops.db` | SQLite database location |
 | `HOMEOPS_SEED_DIR` | `data/seed` | Location of the fictional seed |
@@ -229,10 +253,11 @@ Every setting has a working default, so the project runs with no `.env` at all. 
 | `HOMEOPS_DEMO_MODE` | `true` | Marks seeded records as fictional demo data |
 | `HOMEOPS_MCP_URL` | `http://127.0.0.1:8001/mcp` | Where the orchestrator reaches the MCP server |
 | `HOMEOPS_API_HOST` / `HOMEOPS_API_PORT` | `127.0.0.1` / `8000` | API bind address |
+| `NEXT_PUBLIC_API_BASE_URL` | `http://127.0.0.1:8000` | API URL used by the browser |
 | `HOMEOPS_SUMMARY_PROVIDER` | `deterministic` | `deterministic` or `bedrock` |
 | `AWS_REGION` / `BEDROCK_MODEL_ID` | unset | Only needed for the optional Bedrock path |
 
-AWS credentials are **never** read from `.env` by the application and are never committed. The
+AWS credentials are **never** read from env files by the application and are never committed. The
 optional Bedrock path uses the standard AWS credential chain (`AWS_PROFILE`, instance role, ...).
 
 ---
@@ -256,7 +281,8 @@ explicit confirmation.
 
 - No real household data is included. The seed is fictional, labelled `is_demo` and marked with the
   `demo_seed` source type.
-- `.env`, credentials, local databases, logs, receipts and user documents are git-ignored.
+- `.env`, `.env.dev`, `.env.prod`, credentials, local databases, logs, receipts and user documents
+  are git-ignored.
 - All three services bind to loopback by default.
 - There is no shell execution, no unrestricted SQL, no arbitrary URL fetching and no model-generated
   destination URL. Every outbound link is built from stored fields or a fixed public endpoint, and
@@ -382,7 +408,9 @@ Any client supporting MCP Streamable HTTP transport can connect to:
 The website lives in `apps/web-next`. It is a Next.js app with a marketing landing page (`/`)
 and the assistant demo (`/demo`). It talks to the FastAPI orchestrator over REST.
 
-To point it at a different API host, create `apps/web-next/.env.local`:
+To point it at a different API host, set `NEXT_PUBLIC_API_BASE_URL` in
+`.env.dev` (loaded by `make dev` / `make web`). Next.js also reads
+`apps/web-next/.env.local` if you prefer a website-only override:
 
 ```bash
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
@@ -400,23 +428,31 @@ and `BEDROCK_MODEL_ID` (see below).
 HomeOps supports containerized deployment with Docker Compose and a Next.js frontend.
 
 ### Architecture with Docker
+
 ```bash
-docker compose up --build
+make env ENV_NAME=prod
+docker compose --env-file .env.prod up --build
+```
+
+Add `--profile infra` to also start Postgres and Redis:
+
+```bash
+docker compose --env-file .env.prod --profile infra up --build
 ```
 
 Services:
-- **PostgreSQL** (port 5432) - Primary database
-- **Redis** (port 6379) - Caching layer  
 - **MCP Server** (port 8001) - Streamable HTTP MCP server
 - **FastAPI API** (port 8000) - Orchestrator with Bedrock integration
-- **Next.js Web** (port 3000) - Modern landing page + demo interface
+- **Next.js Web** (port 3000) - Landing page + demo interface
+- **PostgreSQL** (port 5432, optional `infra` profile) - Reserved; the app still uses SQLite
+- **Redis** (port 6379, optional `infra` profile) - Reserved; not read by the app yet
 
 ### Frontend
 - **Landing Page** (`/`): Marketing page with features, tech stack, and CTA
 - **Demo/MVP** (`/demo`): Interactive AI assistant powered by MCP tools and Bedrock
 
 ### Amazon Bedrock Integration
-The API uses Amazon Bedrock for AI-powered technician brief summaries. Configure via environment variables:
+The API uses Amazon Bedrock for AI-powered technician brief summaries. Enable it in `.env.prod`:
 ```bash
 HOMEOPS_SUMMARY_PROVIDER=bedrock
 BEDROCK_MODEL_ID=anthropic.claude-3-5-sonnet-20240620-v1:0

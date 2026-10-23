@@ -7,7 +7,7 @@ Use this as the single source of truth. Check an item only after it has been imp
 - [ ] Create the `homeops` Git repository.
 - [ ] Add an open-source license (MIT or Apache-2.0) if submitting public, or follow the Devpost instructions for sharing a private repository.
 - [ ] Add `.gitignore` for `.env`, credentials, local databases, logs, user documents and test output.
-- [ ] Add `.env.example` with placeholders only, no real credentials.
+- [ ] Add `.env.dev.example` and `.env.prod.example` with placeholders only, no real credentials.
 - [ ] Add README with system requirements, install/run/stop/reset/test commands, architecture and known limitations.
 - [ ] Seed only fictional demo household, provider and appointment data.
 - [ ] Add a repeatable seed/reset command.

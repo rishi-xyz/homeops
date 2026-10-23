@@ -1,10 +1,13 @@
-"""Asset inventory queries."""
+"""Asset inventory queries and creation."""
 
 from __future__ import annotations
 
 import sqlite3
+import uuid
+from datetime import date
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from ..errors import NotFoundError
+from ..errors import NotFoundError, ValidationError
 from ..models import (
     Asset,
     AssetCategory,
@@ -15,11 +18,42 @@ from ..models import (
     SourceType,
     WarrantyStatus,
 )
-from ..timeutil import parse_date, today_in
+from ..timeutil import parse_date, today_in, utcnow_iso
 from .warranty import compute_warranty
 
 MAX_LIST_LIMIT = 100
 DEFAULT_LIST_LIMIT = 20
+MAX_NAME_LENGTH = 200
+MAX_TEXT_LENGTH = 200
+
+
+def _new_asset_id() -> str:
+    return f"asset_{uuid.uuid4().hex[:12]}"
+
+
+def _optional_text(value: str | None, field: str) -> str | None:
+    """Trim an optional free-text field; empty input stays unknown."""
+    if value is None:
+        return None
+    clean = str(value).strip()
+    if not clean:
+        return None
+    if len(clean) > MAX_TEXT_LENGTH:
+        raise ValidationError(
+            f"{field} must be {MAX_TEXT_LENGTH} characters or fewer",
+            details={"field": field, "max_length": MAX_TEXT_LENGTH},
+        )
+    return clean
+
+
+def _validate_timezone(tz_name: str) -> str:
+    try:
+        ZoneInfo(tz_name)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise ValidationError(
+            f"{tz_name!r} is not a valid IANA timezone", details={"timezone": tz_name}
+        ) from exc
+    return tz_name
 
 
 def _asset_from_row(row: sqlite3.Row) -> Asset:
@@ -108,6 +142,99 @@ def get_asset(
     return _asset_from_row(row)
 
 
+def create_asset(
+    conn: sqlite3.Connection,
+    *,
+    name: str,
+    category: AssetCategory | str = AssetCategory.APPLIANCE,
+    location: str | None = None,
+    brand: str | None = None,
+    model: str | None = None,
+    purchase_date: str | date | None = None,
+    warranty_start: str | date | None = None,
+    warranty_end: str | date | None = None,
+    timezone: str = "Europe/London",
+    manual_ref: str | None = None,
+    receipt_ref: str | None = None,
+    source_type: SourceType | str = SourceType.USER_ENTERED,
+    source_ref: str | None = None,
+    is_demo: bool = False,
+) -> Asset:
+    """Create a household asset.
+
+    Only details supplied by the caller are stored. Purchase and warranty dates
+    that were not supplied stay unknown - no term is inferred from a purchase
+    date, and a missing warranty end never becomes a guess.
+    """
+    clean_name = (name or "").strip()
+    if not clean_name:
+        raise ValidationError("Asset name must not be empty", details={"field": "name"})
+    if len(clean_name) > MAX_NAME_LENGTH:
+        raise ValidationError(
+            f"Asset name must be {MAX_NAME_LENGTH} characters or fewer",
+            details={"field": "name", "max_length": MAX_NAME_LENGTH},
+        )
+
+    try:
+        asset_category = category if isinstance(category, AssetCategory) else AssetCategory(str(category))
+    except ValueError as exc:
+        raise ValidationError(
+            f"{category!r} is not a valid asset category",
+            details={"field": "category", "allowed": [item.value for item in AssetCategory]},
+        ) from exc
+
+    try:
+        asset_source = source_type if isinstance(source_type, SourceType) else SourceType(str(source_type))
+    except ValueError as exc:
+        raise ValidationError(
+            f"{source_type!r} is not a valid source type",
+            details={"field": "source_type", "allowed": [item.value for item in SourceType]},
+        ) from exc
+
+    zone = _validate_timezone(timezone or "Europe/London")
+    purchase = parse_date(purchase_date, field="purchase_date")
+    start = parse_date(warranty_start, field="warranty_start")
+    end = parse_date(warranty_end, field="warranty_end")
+    if start is not None and end is not None and start > end:
+        raise ValidationError(
+            "warranty_start must not be after warranty_end",
+            details={"field": "warranty_start"},
+        )
+
+    asset_id = _new_asset_id()
+    now = utcnow_iso()
+    conn.execute(
+        """
+        INSERT INTO assets (
+            asset_id, name, category, location, brand, model, purchase_date,
+            warranty_start, warranty_end, timezone, manual_ref, receipt_ref,
+            source_type, source_ref, is_demo, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            asset_id,
+            clean_name,
+            str(asset_category),
+            _optional_text(location, "location"),
+            _optional_text(brand, "brand"),
+            _optional_text(model, "model"),
+            purchase.isoformat() if purchase else None,
+            start.isoformat() if start else None,
+            end.isoformat() if end else None,
+            zone,
+            _optional_text(manual_ref, "manual_ref"),
+            _optional_text(receipt_ref, "receipt_ref"),
+            str(asset_source),
+            _optional_text(source_ref, "source_ref"),
+            1 if is_demo else 0,
+            now,
+            now,
+        ),
+    )
+    row = conn.execute("SELECT * FROM assets WHERE asset_id = ?", (asset_id,)).fetchone()
+    return _asset_from_row(row)
+
+
 def get_asset_detail(
     conn: sqlite3.Connection,
     asset_id: str,
@@ -163,6 +290,7 @@ __all__ = [
     "DEFAULT_LIST_LIMIT",
     "MAX_LIST_LIMIT",
     "EventType",
+    "create_asset",
     "get_asset",
     "get_asset_detail",
     "list_assets",

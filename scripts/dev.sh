@@ -2,6 +2,7 @@
 set -e
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+export HOMEOPS_ENV="${HOMEOPS_ENV:-dev}"
 mkdir -p data/runtime /tmp/opencode
 VENV="$ROOT/.venv"
 [ -d "$VENV" ] || python3 -m venv "$VENV"

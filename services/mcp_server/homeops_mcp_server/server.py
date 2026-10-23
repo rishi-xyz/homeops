@@ -89,6 +89,18 @@ class AssetDetailsResult(BaseModel):
     warranty_basis_note: str
 
 
+class CreateAssetResult(BaseModel):
+    """A newly created asset with its derived warranty state."""
+
+    detail: AssetDetail
+    created: bool = True
+    notice: str = (
+        "Asset stored from the details supplied. Purchase and warranty dates that were not "
+        "supplied stay unknown; no warranty term is inferred."
+    )
+    warranty_basis_note: str
+
+
 class MaintenanceSearchResult(BaseModel):
     """Matching maintenance records."""
 
@@ -286,6 +298,73 @@ async def get_asset_details(
                 summary=f"{detail.asset.name} ({detail.warranty.status.value})",
             )
         return AssetDetailsResult(detail=detail, warranty_basis_note=detail.warranty.basis_note)
+    except HomeOpsError as exc:
+        raise _fail(exc) from exc
+
+
+@server.tool(
+    name="create_asset",
+    title="Add a household asset",
+    description=(
+        "Add a new appliance or other household item to HomeOps, for example when the user buys "
+        "or installs something. Store only the details the user actually provided: purchase and "
+        "warranty dates that were not supplied stay unknown, and no warranty term is inferred."
+    ),
+    structured_output=True,
+)
+async def create_asset(
+    name: Annotated[str, Field(min_length=1, max_length=200, description="Display name, for example 'Fridge Freezer'.")],
+    category: Annotated[AssetCategory, Field(description="Asset category.")] = AssetCategory.APPLIANCE,
+    location: Annotated[str | None, Field(max_length=200, description="Where the item is installed.")] = None,
+    brand: Annotated[str | None, Field(max_length=200, description="Brand, only if the user stated it.")] = None,
+    model: Annotated[str | None, Field(max_length=200, description="Model, only if the user stated it.")] = None,
+    purchase_date: Annotated[str | None, Field(description="Optional ISO-8601 purchase date (YYYY-MM-DD).")] = None,
+    warranty_start: Annotated[str | None, Field(description="Optional ISO-8601 warranty start date (YYYY-MM-DD).")] = None,
+    warranty_end: Annotated[str | None, Field(description="Optional ISO-8601 warranty end date (YYYY-MM-DD).")] = None,
+    timezone: Annotated[str | None, Field(max_length=64, description="IANA timezone used for warranty date maths.")] = None,
+    manual_ref: Annotated[str | None, Field(max_length=200, description="Optional manual reference.")] = None,
+    receipt_ref: Annotated[str | None, Field(max_length=200, description="Optional receipt reference.")] = None,
+    source_type: Annotated[SourceType, Field(description="Where this record comes from.")] = SourceType.USER_ENTERED,
+) -> CreateAssetResult:
+    """Create and persist a new household asset."""
+    settings = _settings()
+    started = time.perf_counter()
+    try:
+        with _db_session(settings) as conn:
+            asset = assets_service.create_asset(
+                conn,
+                name=name,
+                category=category,
+                location=location,
+                brand=brand,
+                model=model,
+                purchase_date=purchase_date,
+                warranty_start=warranty_start,
+                warranty_end=warranty_end,
+                timezone=timezone or settings.household_timezone,
+                manual_ref=manual_ref,
+                receipt_ref=receipt_ref,
+                source_type=source_type,
+                is_demo=settings.demo_mode and source_type is SourceType.DEMO_SEED,
+            )
+            detail = assets_service.get_asset_detail(
+                conn,
+                asset.asset_id,
+                expiring_soon_days=settings.expiring_soon_days,
+                timezone=settings.household_timezone,
+            )
+            _audit(
+                conn,
+                "create_asset",
+                status="success",
+                started=started,
+                record_ids=[asset.asset_id],
+                summary=f"{asset.name} ({asset.category.value})",
+            )
+        return CreateAssetResult(
+            detail=detail,
+            warranty_basis_note=detail.warranty.basis_note,
+        )
     except HomeOpsError as exc:
         raise _fail(exc) from exc
 

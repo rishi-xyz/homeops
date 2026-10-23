@@ -14,6 +14,7 @@ type Message = {
 
 const SUGGESTIONS = [
   "Is my washing machine still under warranty?",
+  "I bought a new fridge",
   "Remind me a month before it expires",
   "Has the washing machine leaked before?",
   "Prepare a brief for the technician",
@@ -26,7 +27,7 @@ export default function DemoPage() {
     {
       id: '1',
       role: 'assistant',
-      content: "Hi! I'm HomeOps, your AI household maintenance assistant. I can help you track warranties, manage reminders, look up maintenance history, prepare technician briefs, and connect you with service providers. What can I help you with today?"
+      content: "Hi! I'm HomeOps, your AI household maintenance assistant. I can help you add new appliances, track warranties, manage reminders, look up maintenance history, prepare technician briefs, and connect you with service providers. What can I help you with today?"
     }
   ]);
   const [input, setInput] = useState('');

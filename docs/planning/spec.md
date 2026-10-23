@@ -85,6 +85,12 @@ All schemas must be explicit, validate arguments, return structured data, and us
 **Output:** asset metadata, saved warranty/purchase dates, provenance, manual/receipt references and linked recent maintenance event IDs.  
 **Error:** unknown asset ID.
 
+### `create_asset`
+
+**Input:** `name`, optional `category`, `location`, `brand`, `model`, `purchase_date`, `warranty_start`, `warranty_end`, `timezone`, `manual_ref`, `receipt_ref`.  
+**Output:** the created asset with its derived warranty state.  
+**Rules:** only supplied details are stored; missing dates stay unknown and no warranty term is inferred. Dates must be ISO-8601 and warranty start must not be after warranty end.
+
 ### `search_maintenance_history`
 
 **Input:** optional `asset_id`, `event_type`, `query`, `start_at`, `end_at`, `limit` (default 10, max 50).  

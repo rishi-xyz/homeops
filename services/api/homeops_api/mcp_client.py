@@ -243,6 +243,12 @@ def _extract_record_ids(payload: dict[str, Any]) -> list[str]:
         value = payload.get(key)
         if isinstance(value, str):
             found.append(value)
+    # Asset tools wrap the entity in {"detail": {"asset": {...}}}.
+    detail = payload.get("detail")
+    if isinstance(detail, dict):
+        asset = detail.get("asset")
+        if isinstance(asset, dict) and isinstance(asset.get("asset_id"), str):
+            found.append(asset["asset_id"])
     for key in ("assets", "events", "reminders", "slots", "requests", "providers", "record_ids"):
         items = payload.get(key)
         if isinstance(items, list):
@@ -258,6 +264,15 @@ def _extract_record_ids(payload: dict[str, Any]) -> list[str]:
 
 
 def _extract_summary(payload: dict[str, Any]) -> str | None:
+    detail = payload.get("detail")
+    if isinstance(detail, dict):
+        asset = detail.get("asset")
+        if isinstance(asset, dict):
+            name = asset.get("name")
+            warranty = detail.get("warranty")
+            status = warranty.get("status") if isinstance(warranty, dict) else None
+            if isinstance(name, str) and name.strip():
+                return f"{name} ({status})" if isinstance(status, str) else name
     for key in ("message", "summary", "notice"):
         value = payload.get(key)
         if isinstance(value, str) and value.strip():

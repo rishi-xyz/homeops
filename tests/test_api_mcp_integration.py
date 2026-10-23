@@ -135,6 +135,42 @@ async def test_assets_endpoint_goes_through_the_mcp_server(api_client: httpx.Asy
 
 
 @pytest.mark.asyncio
+async def test_create_asset_endpoint_persists_through_mcp(api_client: httpx.AsyncClient) -> None:
+    created = await api_client.post(
+        "/api/assets",
+        json={"name": "Tumble Dryer", "brand": "Example", "purchase_date": "2026-01-15"},
+    )
+    assert created.status_code == 201
+    payload = created.json()
+    asset = payload["detail"]["asset"]
+    assert asset["asset_id"].startswith("asset_")
+    assert asset["purchase_date"] == "2026-01-15"
+    assert payload["detail"]["warranty"]["status"] == "unknown"
+
+    fetched = await api_client.get(f"/api/assets/{asset['asset_id']}")
+    assert fetched.status_code == 200
+    assert fetched.json()["detail"]["asset"]["name"] == "Tumble Dryer"
+
+    invalid = await api_client.post("/api/assets", json={"name": "Bad", "warranty_end": "nope"})
+    assert invalid.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_assistant_can_add_a_purchased_asset(api_client: httpx.AsyncClient) -> None:
+    response = await api_client.post(
+        "/api/assistant/message",
+        json={"message": "I bought a new tumble dryer", "conversation_id": "pytest-add"},
+    )
+    assert response.status_code == 200
+    turn = response.json()
+    assert turn["intent"] == "add_asset"
+    names = [entry["name"] for entry in turn["tool_trace"]]
+    assert "create_asset" in names
+    assert all(entry["status"] == "success" for entry in turn["tool_trace"])
+    assert "unknown" in turn["reply"].lower()
+
+
+@pytest.mark.asyncio
 async def test_demo_request_cannot_be_confirmed_without_the_token(api_client: httpx.AsyncClient) -> None:
     slots = (await api_client.get("/api/demo/slots?service_category=appliance_repair")).json()
     assert slots["slots"], "the seed must provide a demo slot"

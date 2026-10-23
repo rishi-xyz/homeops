@@ -62,7 +62,7 @@ Do not select AWS Builder if the project only contains a placeholder/config flag
 ### Phase 0 — Repository and environment (target: 45–60 minutes)
 
 - [ ] Create repo and folders per `architecture.md`.
-- [ ] Add `.gitignore`, `.env.example`, README starter and MIT/Apache-2.0 license.
+- [ ] Add `.gitignore`, `.env.dev.example`, `.env.prod.example`, README starter and MIT/Apache-2.0 license.
 - [ ] Install dependencies and run a tiny FastAPI health endpoint.
 - [ ] Add seed/reset command and verify SQLite persistence.
 

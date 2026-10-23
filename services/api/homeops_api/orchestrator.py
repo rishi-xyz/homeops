@@ -13,15 +13,56 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from homeops_core.config import Settings
 from homeops_core.errors import HomeOpsError
+from homeops_core.models import AssetCategory
+from homeops_core.timeutil import today_in
 
 from .dates import parse_due_datetime
 from .mcp_client import MCPClientManager, ToolCallRecord
 from .summary import PROVIDER_DETERMINISTIC, SummaryProvider
+
+# ---------------------------------------------------------------------------
+# Asset kinds the "I bought ..." intent understands. Longest names first so
+# "fridge freezer" wins over "fridge" and "washing machine" over "washer".
+# ---------------------------------------------------------------------------
+
+ASSET_NOUNS: tuple[tuple[str, str, AssetCategory], ...] = (
+    ("washing machine", "Washing Machine", AssetCategory.APPLIANCE),
+    ("washer dryer", "Washer Dryer", AssetCategory.APPLIANCE),
+    ("washer", "Washing Machine", AssetCategory.APPLIANCE),
+    ("tumble dryer", "Tumble Dryer", AssetCategory.APPLIANCE),
+    ("dryer", "Tumble Dryer", AssetCategory.APPLIANCE),
+    ("dishwasher", "Dishwasher", AssetCategory.APPLIANCE),
+    ("fridge freezer", "Fridge Freezer", AssetCategory.APPLIANCE),
+    ("refrigerator", "Fridge Freezer", AssetCategory.APPLIANCE),
+    ("fridge", "Fridge", AssetCategory.APPLIANCE),
+    ("freezer", "Freezer", AssetCategory.APPLIANCE),
+    ("oven", "Oven", AssetCategory.APPLIANCE),
+    ("cooker", "Cooker", AssetCategory.APPLIANCE),
+    ("hob", "Hob", AssetCategory.APPLIANCE),
+    ("microwave", "Microwave", AssetCategory.APPLIANCE),
+    ("boiler", "Boiler", AssetCategory.HVAC),
+    ("heat pump", "Heat Pump", AssetCategory.HVAC),
+    ("air conditioner", "Air Conditioner", AssetCategory.HVAC),
+    ("air con", "Air Conditioner", AssetCategory.HVAC),
+    ("radiator", "Radiator", AssetCategory.HVAC),
+    ("television", "Television", AssetCategory.ELECTRONICS),
+    ("tv", "Television", AssetCategory.ELECTRONICS),
+    ("vacuum cleaner", "Vacuum Cleaner", AssetCategory.APPLIANCE),
+    ("vacuum", "Vacuum Cleaner", AssetCategory.APPLIANCE),
+    ("lawn mower", "Lawn Mower", AssetCategory.OUTDOOR),
+    ("mower", "Lawn Mower", AssetCategory.OUTDOOR),
+    ("coffee machine", "Coffee Machine", AssetCategory.APPLIANCE),
+    ("kettle", "Kettle", AssetCategory.APPLIANCE),
+    ("toaster", "Toaster", AssetCategory.APPLIANCE),
+    ("laptop", "Laptop", AssetCategory.ELECTRONICS),
+)
+
+ASSET_NOUN_REGEX = "|".join(re.escape(noun) for noun, _, _ in ASSET_NOUNS)
 
 # ---------------------------------------------------------------------------
 # Intent patterns (ordered - the first match wins)
@@ -52,6 +93,17 @@ INTENT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(
             r"\bleak(?:ing|s)?\b|\bbroken\b|\bnot working\b|\bnoise\b|\bfault(?:y)?\b"
             r"|\bissue with\b|\bproblem\b|\breport(?:ing)?\b|\bstruck\b",
+            re.I,
+        ),
+    ),
+    (
+        "add_asset",
+        re.compile(
+            rf"\b(?:bought|purchased)\b[^.?!]*\b(?:{ASSET_NOUN_REGEX})s?\b"
+            rf"|\b(?:got|received|installed)\s+(?:a|an|the|my|our)?\s*(?:brand\s+)?new\s+"
+            rf"(?:{ASSET_NOUN_REGEX})s?\b"
+            rf"|\bnew\s+(?:{ASSET_NOUN_REGEX})s?\b"
+            rf"|\badd\s+(?:a|an)?\s*(?:new\s+)?(?:{ASSET_NOUN_REGEX})s?\b",
             re.I,
         ),
     ),
@@ -239,6 +291,7 @@ class Orchestrator:
             "list_reminders": self._handle_list_reminders,
             "maintenance_history": self._handle_history,
             "log_event": self._handle_log_event,
+            "add_asset": self._handle_add_asset,
             "create_reminder": self._handle_create_reminder,
             "technician_brief": self._handle_brief,
             "service_handoff": self._handle_handoff,
@@ -278,6 +331,7 @@ class Orchestrator:
             reply=(
                 "I can help with household maintenance records. Try one of these:\n"
                 "- \"Is my washing machine still under warranty?\"\n"
+                "- \"I bought a new fridge\"\n"
                 "- \"Remind me to check the boiler before it expires\"\n"
                 "- \"Has the washing machine leaked before?\"\n"
                 "- \"Prepare a brief for the technician\"\n"
@@ -502,6 +556,127 @@ class Orchestrator:
         if not cleaned:
             cleaned = text.strip()
         return cleaned[:500]
+
+    # -- add asset ---------------------------------------------------------
+
+    _BRAND_STOPWORDS = {
+        "a",
+        "an",
+        "the",
+        "my",
+        "our",
+        "their",
+        "his",
+        "her",
+        "this",
+        "that",
+        "new",
+        "brand",
+        "i",
+        "we",
+        "just",
+        "recently",
+        "bought",
+        "purchased",
+        "got",
+        "received",
+        "installed",
+    }
+
+    def _extract_asset(self, text: str) -> tuple[str, str, AssetCategory] | None:
+        """Map a free-text item to a canonical name and category."""
+        lower = text.lower()
+        for noun, name, category in ASSET_NOUNS:
+            if re.search(rf"\b{re.escape(noun)}s?\b", lower):
+                return noun, name, category
+        return None
+
+    def _extract_brand(self, text: str, noun: str) -> str | None:
+        """Read a brand only when the user typed it as a capitalised word."""
+        match = re.search(
+            rf"\b([A-Z][A-Za-z0-9&'.-]{{1,30}})\s+{re.escape(noun)}\b", text
+        )
+        if match is None:
+            return None
+        candidate = match.group(1).strip()
+        if candidate.lower() in self._BRAND_STOPWORDS:
+            return None
+        return candidate
+
+    def _extract_purchase_date(self, text: str) -> str | None:
+        """Read an explicit purchase date; never guess one."""
+        match = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", text)
+        if match:
+            try:
+                return date.fromisoformat(match.group(1)).isoformat()
+            except ValueError:
+                return None
+        today = today_in(self.settings.household_timezone)
+        if re.search(r"\byesterday\b", text, re.I):
+            return (today - timedelta(days=1)).isoformat()
+        if re.search(r"\btoday\b", text, re.I):
+            return today.isoformat()
+        return None
+
+    async def _handle_add_asset(self, text: str, state: ConversationState) -> AssistantTurn:
+        matched = self._extract_asset(text)
+        if matched is None:
+            return AssistantTurn(
+                reply=(
+                    "I can add that item, but I need to know what it is. "
+                    "For example: \"I bought a new washing machine\" or \"add a new boiler\"."
+                ),
+                follow_up="What kind of item did you buy?",
+            )
+
+        noun, name, category = matched
+        brand = self._extract_brand(text, noun)
+        purchase = self._extract_purchase_date(text)
+
+        arguments: dict[str, Any] = {
+            "name": name,
+            "category": str(category),
+            "timezone": self.settings.household_timezone,
+            "source_type": "user_entered",
+        }
+        if brand:
+            arguments["brand"] = brand
+        if purchase:
+            arguments["purchase_date"] = purchase
+
+        payload = await self._call("create_asset", arguments)
+        detail = payload.get("detail") or {}
+        asset = detail.get("asset") or {}
+        asset_id = str(asset.get("asset_id") or "")
+        if asset_id:
+            state.last_asset_id = asset_id
+
+        label = _asset_label(asset) if asset else name
+        purchase_note = (
+            f"Purchase date recorded as {purchase}. "
+            if purchase
+            else "No purchase date was supplied, so it stays unknown. "
+        )
+        reply = (
+            f"Added {label} to HomeOps as a new asset (ID {asset_id}). "
+            f"{purchase_note}"
+            "No warranty dates are stored, so the warranty status is unknown."
+        )
+        return AssistantTurn(
+            reply=reply,
+            cards=[
+                Card(
+                    type="asset",
+                    id=asset_id,
+                    title=str(asset.get("name") or name),
+                    is_demo=bool(asset.get("is_demo")),
+                    payload={
+                        "warranty_status": (detail.get("warranty") or {}).get("status", "unknown"),
+                        "category": asset.get("category"),
+                    },
+                )
+            ],
+        )
 
     async def _handle_create_reminder(self, text: str, state: ConversationState) -> AssistantTurn:
         assets = await self._load_assets()

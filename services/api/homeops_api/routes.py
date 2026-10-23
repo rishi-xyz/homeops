@@ -34,6 +34,22 @@ class CreateReminderRequest(BaseModel):
     recurrence: str | None = Field(default=None, max_length=100)
 
 
+class CreateAssetRequest(BaseModel):
+    """A new household item. Omitted dates stay unknown."""
+
+    name: str = Field(min_length=1, max_length=200)
+    category: str | None = Field(default=None, max_length=40)
+    location: str | None = Field(default=None, max_length=200)
+    brand: str | None = Field(default=None, max_length=200)
+    model: str | None = Field(default=None, max_length=200)
+    purchase_date: str | None = Field(default=None, max_length=20)
+    warranty_start: str | None = Field(default=None, max_length=20)
+    warranty_end: str | None = Field(default=None, max_length=20)
+    timezone: str | None = Field(default=None, max_length=64)
+    manual_ref: str | None = Field(default=None, max_length=200)
+    receipt_ref: str | None = Field(default=None, max_length=200)
+
+
 class HandoffRequest(BaseModel):
     service_category: str = Field(min_length=1, max_length=60)
     asset_id: str | None = Field(default=None, max_length=120)
@@ -153,6 +169,17 @@ async def asset_details(asset_id: str, request: Request) -> dict[str, Any]:
     except HomeOpsError as exc:
         raise _handle_error(exc) from exc
     return payload
+
+
+@router.post("/api/assets", status_code=201)
+async def create_asset(payload: CreateAssetRequest, request: Request) -> dict[str, Any]:
+    """Add a household item through the MCP server."""
+    arguments = {key: value for key, value in payload.model_dump().items() if value is not None}
+    try:
+        result, _record = await _mcp(request).call_tool("create_asset", arguments)
+    except HomeOpsError as exc:
+        raise _handle_error(exc) from exc
+    return result
 
 
 @router.get("/api/reminders")

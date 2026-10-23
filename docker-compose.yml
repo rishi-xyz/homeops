@@ -1,7 +1,63 @@
-version: '3.9'
+# HomeOps production stack.
+#
+#   make env ENV_NAME=prod
+#   docker compose --env-file .env.prod up --build
+#
+# The application stores data in SQLite. Postgres/Redis are optional and grouped
+# behind the `infra` profile:
+#
+#   docker compose --env-file .env.prod --profile infra up --build
 
 services:
+  mcp:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mcp
+    container_name: homeops-mcp
+    env_file:
+      - .env.prod
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: homeops-api
+    env_file:
+      - .env.prod
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      mcp:
+        condition: service_started
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+      args:
+        # NEXT_PUBLIC_* values are baked into the browser bundle at build time.
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+    container_name: homeops-web
+    env_file:
+      - .env.prod
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # --- Optional infrastructure (`--profile infra`) -------------------------
+  # Not read by the application yet: all data lives in SQLite.
   postgres:
+    profiles: ["infra"]
     image: postgres:16-alpine
     container_name: homeops-postgres
     environment:
@@ -19,6 +75,7 @@ services:
       retries: 5
 
   redis:
+    profiles: ["infra"]
     image: redis:7-alpine
     container_name: homeops-redis
     ports:
@@ -28,70 +85,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
-
-  mcp:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.mcp
-    container_name: homeops-mcp
-    env_file:
-      - .env
-    environment:
-      HOMEOPS_MCP_HOST: 0.0.0.0
-      HOMEOPS_MCP_PORT: 8001
-      HOMEOPS_DB_PATH: /app/data/local/homeops.db
-      HOMEOPS_SEED_DIR: /app/data/seed
-      DATABASE_URL: postgresql://homeops:homeops@postgres:5432/homeops
-    volumes:
-      - ./data:/app/data
-    ports:
-      - "8001:8001"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-
-  api:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.api
-    container_name: homeops-api
-    env_file:
-      - .env
-    environment:
-      HOMEOPS_API_HOST: 0.0.0.0
-      HOMEOPS_API_PORT: 8000
-      HOMEOPS_MCP_URL: http://mcp:8001/mcp
-      HOMEOPS_DB_PATH: /app/data/local/homeops.db
-      HOMEOPS_SEED_DIR: /app/data/seed
-      DATABASE_URL: postgresql://homeops:homeops@postgres:5432/homeops
-      AWS_REGION: ${AWS_REGION:-eu-west-1}
-      BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-}
-      HOMEOPS_SUMMARY_PROVIDER: ${HOMEOPS_SUMMARY_PROVIDER:-bedrock}
-    volumes:
-      - ./data:/app/data
-    ports:
-      - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      mcp:
-        condition: service_started
-    restart: unless-stopped
-
-  web:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.web
-    container_name: homeops-web
-    environment:
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
-      NODE_ENV: production
-    ports:
-      - "3000:3000"
-    depends_on:
-      - api
-    restart: unless-stopped
 
 volumes:
   postgres_data:
